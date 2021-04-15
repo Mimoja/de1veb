@@ -2,9 +2,9 @@ import BluetoothDevice from '@/devices/BluetoothDevice.js'
 
 var _appendBuffer = function (buffer1, buffer2) {
     var tmp = new Uint8Array(buffer1.byteLength + buffer2.byteLength);
-    tmp.set(new Uint8Array(buffer1), 0);
-    tmp.set(new Uint8Array(buffer2), buffer1.byteLength);
-    return tmp.buffer;
+    tmp.set(buffer1, 0);
+    tmp.set(buffer2, buffer1.byteLength);
+    return tmp;
 };
 
 export default class Acaia extends BluetoothDevice {
@@ -25,26 +25,22 @@ export default class Acaia extends BluetoothDevice {
     }
 
     decode() {
-        console.log("Got stuff to decode", buffer);
-
         if (this.buffer.byteLength <= 4) {
             return
         }
-        var buffer = this.buffer
 
-        if (buffer[0] !== Acaia.HEADER1 && buffer[1] !== Acaia.HEADER2) {
-            console.log("header does not match: ", buffer[0], buffer[1]);
+        if (this.buffer[0] !== Acaia.HEADER1 && this.buffer[1] !== Acaia.HEADER2) {
+            console.log("header does not match: ", this.buffer[0], this.buffer[1]);
             this.buffer = new Uint8Array();
             return;
         }
 
-        var cmd = buffer[2];
-        console.log("Got event", cmd);
+        var cmd = this.buffer[2];
         switch (cmd) {
             // Event
             case 12:
-                var msgType = buffer[4];
-                var payload = new Uint8Array(buffer.slice(5));
+                var msgType = this.buffer[4]
+                var payload = this.buffer.slice(5)
 
                 if (msgType === 5) {
                     var value = ((payload[1] & 0xff) << 8) + (payload[0] & 0xff);
@@ -70,20 +66,20 @@ export default class Acaia extends BluetoothDevice {
             // Status
             case 8:
                 //length = buffer[3];
-                this.batteryLevel = buffer[4];
+                this.batteryLevel = this.buffer[4];
                 console.log('Got status message, battery= ' + this.batteryLevel)
                 break
 
             default:
                 console.log('unknown message type: ' + cmd);
-                console.log(buffer);
+                console.log(this.buffer);
                 break
         }
         this.buffer = new Uint8Array();
     }
 
     static notification_callback(event, scale) {
-        var buffer = event.target.value.buffer;
+        var buffer = new Uint8Array(event.target.value.buffer);
         scale.buffer = _appendBuffer(scale.buffer, buffer)
         scale.decode();
         console.log("weight:", scale.weight, "battery:", scale.batteryLevel);
@@ -108,6 +104,10 @@ export default class Acaia extends BluetoothDevice {
         this.weightCharacteristic.addEventListener('characteristicvaluechanged', e => Acaia.notification_callback(e, scale));
 
         // Identify to the scale and enable notifications
+        this.weightCharacteristic.startNotifications().catch(async e => {
+            console.log('FAILED: ' + e);
+            return null;
+        });
 
         setTimeout(function () {
             console.log('Sending ident...');
@@ -186,10 +186,6 @@ export default class Acaia extends BluetoothDevice {
     }
 
     async enable_notifications() {
-        this.weightCharacteristic.startNotifications().catch(async e => {
-            console.log('FAILED: ' + e);
-            return null;
-        });
-        await this.weightCharacteristic.writeValue(Acaia.encodeNotificationRequest())
+        this.weightCharacteristic.writeValue(Acaia.encodeNotificationRequest()).then(function () { console.log("Ready set go!"); })
     }
 }
